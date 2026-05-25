@@ -43,9 +43,12 @@ async function runOrthogonal(
 
 export const orthogonalTools = {
   searchPeople: (p: { name?: string; title?: string; company?: string; keywords?: string; limit?: number }) =>
-    runOrthogonal("apollo", "/api/v1/mixed_people/search", {
-      q_person_name: p.name, person_titles: p.title ? [p.title] : undefined,
-      q_organization_name: p.company, q_keywords: p.keywords, per_page: p.limit ?? 10,
+    runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
+      q_person_name: p.name,
+      person_titles: p.title ? [p.title] : undefined,
+      q_organization_name: p.company,
+      q_keywords: p.keywords,
+      per_page: p.limit ?? 10,
     }),
 
   searchCompanies: (p: { name?: string; industry?: string; keywords?: string; limit?: number }) =>
@@ -67,10 +70,10 @@ export const orthogonalTools = {
     runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, { domain: p.domain }),
 
   findContactsAtCompany: (p: { domain: string; title?: string; limit?: number }) =>
-    runOrthogonal("fiber", "/v1/people-search", {
-      company_website: p.domain,
-      job_title: p.title,
-      limit: p.limit ?? 10,
+    runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
+      q_organization_domains: [p.domain],
+      person_titles: p.title ? [p.title] : undefined,
+      per_page: p.limit ?? 10,
     }),
 
   searchPeopleNL: (p: { query: string }) =>
