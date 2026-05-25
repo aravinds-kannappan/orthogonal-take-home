@@ -3,17 +3,17 @@ import { getAllConversations, createConversation, deleteConversation } from "@/l
 import { v4 as uuidv4 } from "uuid";
 
 export async function GET() {
-  return NextResponse.json(getAllConversations());
+  return NextResponse.json(await getAllConversations());
 }
 
 export async function POST(req: NextRequest) {
   const { title } = await req.json().catch(() => ({ title: "New Conversation" }));
   const id = uuidv4();
-  return NextResponse.json(createConversation(id, title || "New Conversation"));
+  return NextResponse.json(await createConversation(id, title || "New Conversation"));
 }
 
 export async function DELETE(req: NextRequest) {
   const { id } = await req.json();
-  deleteConversation(id);
+  await deleteConversation(id);
   return NextResponse.json({ success: true });
 }
