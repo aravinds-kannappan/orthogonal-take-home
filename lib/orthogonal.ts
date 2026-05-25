@@ -67,7 +67,16 @@ export const orthogonalTools = {
     runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, { domain: p.domain }),
 
   findContactsAtCompany: (p: { domain: string; title?: string; limit?: number }) =>
-    runOrthogonal("fiber", "/v1/people/search", { company_domain: p.domain, title: p.title, limit: p.limit ?? 10 }),
+    runOrthogonal("fiber", "/v1/people-search", {
+      company_website: p.domain,
+      job_title: p.title,
+      limit: p.limit ?? 10,
+    }),
+
+  searchPeopleNL: (p: { query: string }) =>
+    runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
+      query: p.query,
+    }),
 };
 
 export const CLAUDE_TOOLS = [
@@ -145,6 +154,17 @@ export const CLAUDE_TOOLS = [
         limit: { type: "number" },
       },
       required: ["domain"],
+    },
+  },
+  {
+    name: "search_people_nl",
+    description: "Natural language search for people. Use this for queries like 'VPs of Sales at fintech startups' or 'engineers at Series B AI companies'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Natural language description of the people you're looking for" },
+      },
+      required: ["query"],
     },
   },
 ] as const;
