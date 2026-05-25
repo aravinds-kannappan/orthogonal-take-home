@@ -1,8 +1,4 @@
-import fs from "fs";
-import path from "path";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_FILE = path.join(DATA_DIR, "conversations.json");
+import { kv } from "@vercel/kv";
 
 export interface Message {
   id: string;
@@ -20,68 +16,49 @@ export interface Conversation {
   updatedAt: string;
 }
 
-interface DB { conversations: Record<string, Conversation>; }
+export const MAX_MESSAGES_IN_CONTEXT = 20;
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+export async function getAllConversations(): Promise<Conversation[]> {
+  try {
+    const keys = await kv.keys("conv:*");
+    if (!keys.length) return [];
+    const convs = await Promise.all(keys.map(k => kv.get<Conversation>(k)));
+    return (convs.filter(Boolean) as Conversation[]).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  } catch { return []; }
 }
 
-function readDB(): DB {
-  ensureDataDir();
-  if (!fs.existsSync(DB_FILE)) return { conversations: {} };
-  try { return JSON.parse(fs.readFileSync(DB_FILE, "utf-8")); } catch { return { conversations: {} }; }
+export async function getConversation(id: string): Promise<Conversation | null> {
+  try { return await kv.get<Conversation>(`conv:${id}`); } catch { return null; }
 }
 
-function writeDB(db: DB) {
-  ensureDataDir();
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-export function getAllConversations(): Conversation[] {
-  const db = readDB();
-  return Object.values(db.conversations).sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-}
-
-export function getConversation(id: string): Conversation | null {
-  return readDB().conversations[id] || null;
-}
-
-export function createConversation(id: string, title: string): Conversation {
-  const db = readDB();
+export async function createConversation(id: string, title: string): Promise<Conversation> {
   const now = new Date().toISOString();
   const conv: Conversation = { id, title, messages: [], createdAt: now, updatedAt: now };
-  db.conversations[id] = conv;
-  writeDB(db);
+  await kv.set(`conv:${id}`, conv);
   return conv;
 }
 
-export function addMessage(conversationId: string, message: Message) {
-  const db = readDB();
-  const conv = db.conversations[conversationId];
+export async function addMessage(conversationId: string, message: Message) {
+  const conv = await getConversation(conversationId);
   if (!conv) return;
   conv.messages.push(message);
   conv.updatedAt = new Date().toISOString();
   if (conv.title === "New Conversation" && message.role === "user") {
     conv.title = message.content.slice(0, 60) + (message.content.length > 60 ? "…" : "");
   }
-  writeDB(db);
+  await kv.set(`conv:${conversationId}`, conv);
 }
 
-export function updateConversationSummary(conversationId: string, summary: string) {
-  const db = readDB();
-  const conv = db.conversations[conversationId];
+export async function updateConversationSummary(conversationId: string, summary: string) {
+  const conv = await getConversation(conversationId);
   if (!conv) return;
   conv.summary = summary;
   conv.updatedAt = new Date().toISOString();
-  writeDB(db);
+  await kv.set(`conv:${conversationId}`, conv);
 }
 
-export function deleteConversation(id: string) {
-  const db = readDB();
-  delete db.conversations[id];
-  writeDB(db);
+export async function deleteConversation(id: string) {
+  await kv.del(`conv:${id}`);
 }
-
-export const MAX_MESSAGES_IN_CONTEXT = 20;
