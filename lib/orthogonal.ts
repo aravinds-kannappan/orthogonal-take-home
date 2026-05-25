@@ -42,44 +42,116 @@ async function runOrthogonal(
 }
 
 export const orthogonalTools = {
-  searchPeople: (p: { name?: string; title?: string; company?: string; keywords?: string; limit?: number }) =>
-    runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
+  // Search people — Apollo primary, Fiber NL fallback
+  searchPeople: async (p: { name?: string; title?: string; company?: string; keywords?: string; limit?: number }) => {
+    const result = await runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
       q_person_name: p.name,
       person_titles: p.title ? [p.title] : undefined,
       q_organization_name: p.company,
       q_keywords: p.keywords,
       per_page: p.limit ?? 10,
-    }),
+    });
+    if (!result.success) {
+      return runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
+        query: [p.name, p.title, p.company, p.keywords].filter(Boolean).join(" "),
+      });
+    }
+    return result;
+  },
 
-  searchCompanies: (p: { name?: string; industry?: string; keywords?: string; limit?: number }) =>
-    runOrthogonal("apollo", "/api/v1/mixed_companies/search", {
-      q_organization_name: p.name, q_keywords: p.keywords, per_page: p.limit ?? 10,
-    }),
+  // Search companies — Apollo primary, Fiber NL fallback
+  searchCompanies: async (p: { name?: string; industry?: string; keywords?: string; limit?: number }) => {
+    const result = await runOrthogonal("apollo", "/api/v1/mixed_companies/search", {
+      q_organization_name: p.name,
+      q_keywords: p.keywords,
+      per_page: p.limit ?? 10,
+    });
+    if (!result.success) {
+      return runOrthogonal("fiber", "/v1/natural-language-search/companies", {
+        query: [p.name, p.industry, p.keywords].filter(Boolean).join(" "),
+      });
+    }
+    return result;
+  },
 
-  enrichPerson: (p: { firstName: string; lastName: string; domain?: string; linkedinUrl?: string }) =>
-    runOrthogonal("sixtyfour", "/enrich-lead", {
-      lead_info: { first_name: p.firstName, last_name: p.lastName, company_domain: p.domain, linkedin_url: p.linkedinUrl },
-    }),
+  // Enrich person — Sixtyfour primary, Apollo people match fallback
+  enrichPerson: async (p: { firstName: string; lastName: string; domain?: string; linkedinUrl?: string }) => {
+    const result = await runOrthogonal("sixtyfour", "/enrich-lead", {
+      lead_info: {
+        first_name: p.firstName,
+        last_name: p.lastName,
+        company_domain: p.domain,
+        linkedin_url: p.linkedinUrl,
+      },
+    });
+    if (!result.success) {
+      return runOrthogonal("apollo", "/api/v1/people/match", {
+        first_name: p.firstName,
+        last_name: p.lastName,
+        organization_domain: p.domain,
+      });
+    }
+    return result;
+  },
 
-  findEmail: (p: { firstName: string; lastName: string; domain: string }) =>
-    runOrthogonal("tomba", "/v1/email-finder", undefined, {
-      domain: p.domain, first_name: p.firstName, last_name: p.lastName,
-    }),
+  // Find email — Tomba primary, Fiber contact details fallback
+  findEmail: async (p: { firstName: string; lastName: string; domain: string }) => {
+    const result = await runOrthogonal("tomba", "/v1/email-finder", undefined, {
+      domain: p.domain,
+      first_name: p.firstName,
+      last_name: p.lastName,
+    });
+    if (!result.success) {
+      return runOrthogonal("fiber", "/v1/contact-details/turbo/sync", {
+        first_name: p.firstName,
+        last_name: p.lastName,
+        company_website: p.domain,
+      });
+    }
+    return result;
+  },
 
-  enrichCompany: (p: { domain: string }) =>
-    runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, { domain: p.domain }),
+  // Enrich company — Apollo primary, Fiber kitchen sink fallback
+  enrichCompany: async (p: { domain: string }) => {
+    const result = await runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, {
+      domain: p.domain,
+    });
+    if (!result.success) {
+      return runOrthogonal("fiber", "/v1/kitchen-sink/company", {
+        company_website: p.domain,
+      });
+    }
+    return result;
+  },
 
-  findContactsAtCompany: (p: { domain: string; title?: string; limit?: number }) =>
-    runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
+  // Find contacts at company — Apollo primary, Tomba domain search fallback
+  findContactsAtCompany: async (p: { domain: string; title?: string; limit?: number }) => {
+    const result = await runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
       q_organization_domains: [p.domain],
       person_titles: p.title ? [p.title] : undefined,
       per_page: p.limit ?? 10,
-    }),
+    });
+    if (!result.success) {
+      return runOrthogonal("tomba", "/v1/domain-search", undefined, {
+        domain: p.domain,
+      });
+    }
+    return result;
+  },
 
-  searchPeopleNL: (p: { query: string }) =>
-    runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
+  // Natural language people search — Fiber primary, Apollo keyword fallback
+  searchPeopleNL: async (p: { query: string }) => {
+    const result = await runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
       query: p.query,
-    }),
+    });
+    if (!result.success) {
+      return runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
+        q_keywords: p.query,
+        per_page: 10,
+      });
+    }
+    return result;
+  },
 };
 
 export const CLAUDE_TOOLS = [
@@ -142,7 +214,9 @@ export const CLAUDE_TOOLS = [
     description: "Get detailed company info by domain — funding, headcount, industry, description.",
     input_schema: {
       type: "object",
-      properties: { domain: { type: "string", description: "Company domain e.g. stripe.com" } },
+      properties: {
+        domain: { type: "string", description: "Company domain e.g. stripe.com" },
+      },
       required: ["domain"],
     },
   },
