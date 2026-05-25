@@ -4,7 +4,7 @@ import { getConversation, createConversation, addMessage, updateConversationSumm
 import { CLAUDE_TOOLS, orthogonalTools, ToolName } from "@/lib/orthogonal";
 import { v4 as uuidv4 } from "uuid";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const anthropic = new Anthropic({ apiKey: process.env.Anthropic! });
 
 const SYSTEM_PROMPT = `You are a professional research assistant with access to real business intelligence APIs via Orthogonal. You can find company information, look up contacts, enrich lead profiles, and find email addresses.
 
