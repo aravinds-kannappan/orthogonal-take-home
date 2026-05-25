@@ -1,5 +1,5 @@
 const ORTHOGONAL_BASE = "https://api.orthogonal.com/v1";
-const API_KEY = process.env.ORTHOGONAL_API_KEY!;
+const API_KEY = process.env.Orthogonal!;
 
 export interface OrthogonalResult {
   success: boolean;
