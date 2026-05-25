@@ -22,8 +22,8 @@ async function executeTool(name: ToolName, input: Record<string, unknown>) {
   }
 }
 
-function buildContextMessages(convId: string): Anthropic.MessageParam[] {
-  const conv = getConversation(convId);
+async function buildContextMessages(convId: string): Promise<Anthropic.MessageParam[]> {
+  const conv = await getConversation(convId);
   if (!conv) return [];
   const msgs = conv.messages.slice(-MAX_MESSAGES_IN_CONTEXT);
   const result: Anthropic.MessageParam[] = [];
@@ -36,7 +36,7 @@ function buildContextMessages(convId: string): Anthropic.MessageParam[] {
 }
 
 async function summarizeIfNeeded(convId: string) {
-  const conv = getConversation(convId);
+  const conv = await getConversation(convId);
   if (!conv || conv.messages.length < MAX_MESSAGES_IN_CONTEXT) return;
   const old = conv.messages.slice(0, -MAX_MESSAGES_IN_CONTEXT);
   if (!old.length) return;
@@ -46,7 +46,7 @@ async function summarizeIfNeeded(convId: string) {
       messages: [{ role: "user", content: `Summarize in 2-3 sentences:\n\n${old.map(m => `${m.role}: ${m.content}`).join("\n")}` }],
     });
     const summary = r.content[0].type === "text" ? r.content[0].text : "";
-    updateConversationSummary(convId, summary);
+    await updateConversationSummary(convId, summary);
   } catch { /* non-fatal */ }
 }
 
@@ -56,12 +56,12 @@ export async function POST(req: NextRequest) {
     if (!message?.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
     let convId = conversationId;
-    if (!convId || !getConversation(convId)) {
+    if (!convId || !(await getConversation(convId))) {
       convId = convId || uuidv4();
-      createConversation(convId, "New Conversation");
+      await createConversation(convId, "New Conversation");
     }
 
-    addMessage(convId, { id: uuidv4(), role: "user", content: message, createdAt: new Date().toISOString() });
+    await addMessage(convId, { id: uuidv4(), role: "user", content: message, createdAt: new Date().toISOString() });
     await summarizeIfNeeded(convId);
 
     const encoder = new TextEncoder();
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         const send = (data: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         try {
           send({ type: "conversation_id", conversationId: convId });
-          let currentMessages = buildContextMessages(convId);
+          let currentMessages = await buildContextMessages(convId);
           let finalText = "";
           let iterations = 0;
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
             finalText = "";
           }
 
-          addMessage(convId, { id: uuidv4(), role: "assistant", content: finalText, createdAt: new Date().toISOString() });
+          await addMessage(convId, { id: uuidv4(), role: "assistant", content: finalText, createdAt: new Date().toISOString() });
           send({ type: "done" });
           controller.close();
         } catch (err) {
