@@ -18,6 +18,7 @@ async function executeTool(name: ToolName, input: Record<string, unknown>) {
     case "find_email": return orthogonalTools.findEmail(input as Parameters<typeof orthogonalTools.findEmail>[0]);
     case "enrich_company": return orthogonalTools.enrichCompany(input as Parameters<typeof orthogonalTools.enrichCompany>[0]);
     case "find_contacts_at_company": return orthogonalTools.findContactsAtCompany(input as Parameters<typeof orthogonalTools.findContactsAtCompany>[0]);
+    case "search_people_nl": return orthogonalTools.searchPeopleNL(input as Parameters<typeof orthogonalTools.searchPeopleNL>[0]);
     default: return { success: false, error: `Unknown tool: ${name}` };
   }
 }
