@@ -6,9 +6,16 @@ import { v4 as uuidv4 } from "uuid";
 
 const anthropic = new Anthropic({ apiKey: process.env.Anthropic! });
 
-const SYSTEM_PROMPT = `You are a professional research assistant with access to real business intelligence APIs via Orthogonal. You can find company information, look up contacts, enrich lead profiles, and find email addresses.
+const SYSTEM_PROMPT = `You are a professional research assistant with access to real business intelligence APIs via Orthogonal.
 
-Proactively use your tools to get real data. Chain multiple tools when needed — e.g., search for a company, then find contacts at it. Present results with markdown: **bold** for names, bullet lists for multiple results. If a tool fails, say so clearly.`;
+RULES:
+- Use your tools to gather real data
+- After ALL tool calls are complete, write ONE clean final response
+- Start with a brief 1-line summary of what you did e.g. "I searched Apollo and found 10 contacts at Stripe."
+- Then present the results in clean markdown: **bold** names, bullet points for data fields
+- Do NOT output chain-of-thought mid-response like "let me try...", "I'll now search...", "Let me broaden..."
+- If a tool fails, mention it once briefly then show what you did find
+- End with one short follow-up offer e.g. "Would you like me to enrich any of these contacts?"`;
 
 async function executeTool(name: ToolName, input: Record<string, unknown>) {
   switch (name) {
@@ -43,7 +50,7 @@ async function summarizeIfNeeded(convId: string) {
   if (!old.length) return;
   try {
     const r = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514", max_tokens: 400,
+      model: "claude-sonnet-4-5", max_tokens: 400,
       messages: [{ role: "user", content: `Summarize in 2-3 sentences:\n\n${old.map(m => `${m.role}: ${m.content}`).join("\n")}` }],
     });
     const summary = r.content[0].type === "text" ? r.content[0].text : "";
@@ -77,7 +84,7 @@ export async function POST(req: NextRequest) {
 
           while (iterations++ < 5) {
             const response = await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-5",
               max_tokens: 2048,
               system: SYSTEM_PROMPT,
               tools: CLAUDE_TOOLS as unknown as Anthropic.Tool[],
