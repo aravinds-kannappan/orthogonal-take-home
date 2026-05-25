@@ -1,4 +1,6 @@
-import { kv } from "@vercel/kv";
+import { Redis } from "@upstash/redis";
+
+const redis = Redis.fromEnv();
 
 export interface Message {
   id: string;
@@ -20,9 +22,9 @@ export const MAX_MESSAGES_IN_CONTEXT = 20;
 
 export async function getAllConversations(): Promise<Conversation[]> {
   try {
-    const keys = await kv.keys("conv:*");
+    const keys = await redis.keys("conv:*");
     if (!keys.length) return [];
-    const convs = await Promise.all(keys.map(k => kv.get<Conversation>(k)));
+    const convs = await Promise.all(keys.map(k => redis.get<Conversation>(k)));
     return (convs.filter(Boolean) as Conversation[]).sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
@@ -30,13 +32,13 @@ export async function getAllConversations(): Promise<Conversation[]> {
 }
 
 export async function getConversation(id: string): Promise<Conversation | null> {
-  try { return await kv.get<Conversation>(`conv:${id}`); } catch { return null; }
+  try { return await redis.get<Conversation>(`conv:${id}`); } catch { return null; }
 }
 
 export async function createConversation(id: string, title: string): Promise<Conversation> {
   const now = new Date().toISOString();
   const conv: Conversation = { id, title, messages: [], createdAt: now, updatedAt: now };
-  await kv.set(`conv:${id}`, conv);
+  await redis.set(`conv:${id}`, conv);
   return conv;
 }
 
@@ -48,7 +50,7 @@ export async function addMessage(conversationId: string, message: Message) {
   if (conv.title === "New Conversation" && message.role === "user") {
     conv.title = message.content.slice(0, 60) + (message.content.length > 60 ? "…" : "");
   }
-  await kv.set(`conv:${conversationId}`, conv);
+  await redis.set(`conv:${conversationId}`, conv);
 }
 
 export async function updateConversationSummary(conversationId: string, summary: string) {
@@ -56,9 +58,9 @@ export async function updateConversationSummary(conversationId: string, summary:
   if (!conv) return;
   conv.summary = summary;
   conv.updatedAt = new Date().toISOString();
-  await kv.set(`conv:${conversationId}`, conv);
+  await redis.set(`conv:${conversationId}`, conv);
 }
 
 export async function deleteConversation(id: string) {
-  await kv.del(`conv:${id}`);
+  await redis.del(`conv:${id}`);
 }
