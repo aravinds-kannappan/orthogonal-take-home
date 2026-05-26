@@ -1,7 +1,3 @@
-Yes — here's the full updated README reflecting everything that was actually built:
-
----
-
 # Orthogonal Chat
 
 An AI-powered chat interface backed by real business intelligence data via Orthogonal APIs. Ask about companies, find contacts, enrich lead profiles, and more — all in a persistent, streaming chat experience.
