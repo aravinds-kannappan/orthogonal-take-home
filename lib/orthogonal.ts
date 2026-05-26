@@ -154,18 +154,15 @@ export const orthogonalTools = {
     return result;
   },
 
-  // Natural language people search — Fiber primary, Apollo fallback
+  // Natural language people search — Fiber and Apollo in parallel, return first success
   searchPeopleNL: async (p: { query: string }) => {
-    const result = await runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
-      query: p.query,
-    });
-    if (!result.success) {
-      return runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
-        q_keywords: p.query,
-        per_page: 10,
-      });
-    }
-    return result;
+    const [fiber, apollo] = await Promise.all([
+      runOrthogonal("fiber", "/v1/natural-language-search/profiles", { query: p.query }),
+      runOrthogonal("apollo", "/api/v1/mixed_people/api_search", { q_keywords: p.query, per_page: 10 }),
+    ]);
+    if (fiber.success) return fiber;
+    if (apollo.success) return apollo;
+    return { success: false, error: "All search providers failed" };
   },
 };
 
