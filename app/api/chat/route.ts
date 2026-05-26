@@ -14,6 +14,8 @@ RULES:
 - Start with a brief 1-line summary of what you did e.g. "I searched Apollo and found 10 contacts at Stripe."
 - Then present the results in clean markdown: **bold** names, bullet points for data fields
 - Do NOT output chain-of-thought mid-response like "let me try...", "I'll now search...", "Let me broaden..."
+- For multi-part requests, call ALL relevant tools before writing your response — do not stop after the first result
+- Chain tools when needed: if asked to find contacts AND their emails, call find_contacts_at_company then find_email for each person in the same session
 - If find_email fails, automatically call enrich_person for the same person — it also returns email and LinkedIn URL
 - Only tell the user a lookup failed if ALL available tools for that data have been tried
 - End with one short follow-up offer e.g. "Would you like me to enrich any of these contacts?"`;
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
           let finalText = "";
           let iterations = 0;
 
-          while (iterations++ < 5) {
+          while (iterations++ < 8) {
             const response = await anthropic.messages.create({
               model: "claude-sonnet-4-5",
               max_tokens: 2048,
