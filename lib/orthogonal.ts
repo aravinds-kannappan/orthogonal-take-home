@@ -102,7 +102,7 @@ export const orthogonalTools = {
     });
   },
 
-  // Find email — Sixtyfour primary, Tomba fallback
+  // Find email — Sixtyfour primary, Tomba fallback, Fiber kitchen-sink last resort
   findEmail: async (p: { firstName: string; lastName: string; domain: string }) => {
     const sixtyfour = await runOrthogonal("sixtyfour", "/find-email", {
       lead_info: {
@@ -113,10 +113,16 @@ export const orthogonalTools = {
     });
     if (sixtyfour.success) return sixtyfour;
 
-    return runOrthogonal("tomba", "/v1/email-finder", undefined, {
+    const tomba = await runOrthogonal("tomba", "/v1/email-finder", undefined, {
       domain: p.domain,
       first_name: p.firstName,
       last_name: p.lastName,
+    });
+    if (tomba.success) return tomba;
+
+    return runOrthogonal("fiber", "/v1/kitchen-sink/person", {
+      personName: { fullName: `${p.firstName} ${p.lastName}` },
+      companyDomain: { domain: p.domain },
     });
   },
 
