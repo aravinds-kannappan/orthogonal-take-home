@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getConversation, createConversation, addMessage, updateConversationSummary, MAX_MESSAGES_IN_CONTEXT } from "@/lib/db";
 import { CLAUDE_TOOLS, orthogonalTools, ToolName } from "@/lib/orthogonal";
+import { getMemories, addMemories } from "@/lib/memory";
 import { v4 as uuidv4 } from "uuid";
 
 const anthropic = new Anthropic({ apiKey: process.env.Anthropic! });
@@ -19,6 +20,25 @@ RULES:
 - If find_email fails, automatically call enrich_person for the same person — it also returns email and LinkedIn URL
 - Only tell the user a lookup failed if ALL available tools for that data have been tried
 - End with one short follow-up offer e.g. "Would you like me to enrich any of these contacts?"`;
+
+async function extractAndSaveMemories(responseText: string, convTitle: string) {
+  try {
+    const r = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 200,
+      messages: [{
+        role: "user",
+        content: `Extract 0-3 key facts from this response worth remembering in future conversations. Focus on: names + emails found, companies researched, specific contact data discovered. Return as a JSON array of short factual strings only. Return [] if nothing notable.\n\nResponse:\n${responseText.slice(0, 800)}`,
+      }],
+    });
+    const text = r.content[0].type === "text" ? r.content[0].text : "[]";
+    const match = text.match(/\[[\s\S]*?\]/);
+    const facts: string[] = match ? JSON.parse(match[0]) : [];
+    if (facts.length > 0) {
+      await addMemories(facts.map(fact => ({ fact, source: convTitle })));
+    }
+  } catch { /* non-fatal */ }
+}
 
 async function executeTool(name: ToolName, input: Record<string, unknown>) {
   switch (name) {
@@ -75,6 +95,12 @@ export async function POST(req: NextRequest) {
     await addMessage(convId, { id: uuidv4(), role: "user", content: message, createdAt: new Date().toISOString() });
     await summarizeIfNeeded(convId);
 
+    const memories = await getMemories();
+    const memoryBlock = memories.length > 0
+      ? `\n\nMEMORY FROM PREVIOUS CONVERSATIONS (use as background context):\n${memories.slice(-15).map(m => `- ${m.fact} [from: ${m.source}]`).join("\n")}`
+      : "";
+    const activeSystemPrompt = SYSTEM_PROMPT + memoryBlock;
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -84,12 +110,13 @@ export async function POST(req: NextRequest) {
           let currentMessages = await buildContextMessages(convId);
           let finalText = "";
           let iterations = 0;
+          let hadToolUse = false;
 
           while (iterations++ < 8) {
             const response = await anthropic.messages.create({
               model: "claude-sonnet-4-5",
               max_tokens: 2048,
-              system: SYSTEM_PROMPT,
+              system: activeSystemPrompt,
               tools: CLAUDE_TOOLS as unknown as Anthropic.Tool[],
               messages: currentMessages,
             });
@@ -100,6 +127,7 @@ export async function POST(req: NextRequest) {
 
             if (response.stop_reason !== "tool_use") break;
 
+            hadToolUse = true;
             const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
               response.content
                 .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
@@ -116,6 +144,12 @@ export async function POST(req: NextRequest) {
           }
 
           await addMessage(convId, { id: uuidv4(), role: "assistant", content: finalText, createdAt: new Date().toISOString() });
+
+          if (hadToolUse && finalText) {
+            const conv = await getConversation(convId);
+            extractAndSaveMemories(finalText, conv?.title || "Unknown").catch(() => {});
+          }
+
           send({ type: "done" });
           controller.close();
         } catch (err) {
