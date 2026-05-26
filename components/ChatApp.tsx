@@ -146,7 +146,7 @@ export default function ChatApp() {
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Connected</span>
           </div>
         </header>
-        <MessageList messages={messages} isLoading={isLoading} />
+        <MessageList messages={messages} isLoading={isLoading} onSend={sendMessage} />
         <ChatInput onSend={sendMessage} onStop={() => abortRef.current?.abort()} isLoading={isLoading} />
       </main>
     </div>
