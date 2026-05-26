@@ -223,6 +223,6 @@ The agentic loop (Claude calling multiple tools in sequence) is the most expensi
 5. **Retry with exponential backoff** — for transient Orthogonal API failures
 6. **Conversation search** — full-text search across message history
 7. **Per-user rate limiting** — Upstash Redis sliding window to prevent credit exhaustion
-8. **Additional APIs** — Hunter (email verification), Brand.dev (company branding), Linkup (web search/news), Nyne (deep intelligence) are all available on Orthogonal and would significantly improve enrichment quality
+8. **Additional APIs** — Would significantly improve enrichment quality and broad-search friendly
 9. **Export** — download conversation as markdown or CSV
 10. **Streaming tool results** — show partial API data as it arrives rather than waiting for full response
