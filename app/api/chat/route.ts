@@ -14,7 +14,8 @@ RULES:
 - Start with a brief 1-line summary of what you did e.g. "I searched Apollo and found 10 contacts at Stripe."
 - Then present the results in clean markdown: **bold** names, bullet points for data fields
 - Do NOT output chain-of-thought mid-response like "let me try...", "I'll now search...", "Let me broaden..."
-- If a tool fails, mention it once briefly then show what you did find
+- If find_email fails, automatically call enrich_person for the same person — it also returns email and LinkedIn URL
+- Only tell the user a lookup failed if ALL available tools for that data have been tried
 - End with one short follow-up offer e.g. "Would you like me to enrich any of these contacts?"`;
 
 async function executeTool(name: ToolName, input: Record<string, unknown>) {
@@ -97,14 +98,16 @@ export async function POST(req: NextRequest) {
 
             if (response.stop_reason !== "tool_use") break;
 
-            const toolResults: Anthropic.ToolResultBlockParam[] = [];
-            for (const block of response.content) {
-              if (block.type !== "tool_use") continue;
-              send({ type: "tool_start", toolName: block.name, toolInput: block.input });
-              const result = await executeTool(block.name as ToolName, block.input as Record<string, unknown>);
-              send({ type: "tool_result", toolName: block.name, result, price: result.price });
-              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
-            }
+            const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+              response.content
+                .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
+                .map(async (block) => {
+                  send({ type: "tool_start", toolName: block.name, toolInput: block.input });
+                  const result = await executeTool(block.name as ToolName, block.input as Record<string, unknown>);
+                  send({ type: "tool_result", toolName: block.name, result, price: result.price });
+                  return { type: "tool_result" as const, tool_use_id: block.id, content: JSON.stringify(result) };
+                })
+            );
 
             currentMessages = [...currentMessages, { role: "assistant", content: response.content }, { role: "user", content: toolResults }];
             finalText = "";
