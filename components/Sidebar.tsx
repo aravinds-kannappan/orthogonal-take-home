@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Conversation } from "./ChatApp";
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 }
 
 function timeAgo(d: string) {
@@ -22,9 +23,18 @@ function timeAgo(d: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export default function Sidebar({ conversations, activeId, isOpen, onToggle, onSelect, onNew, onDelete }: Props) {
+export default function Sidebar({ conversations, activeId, isOpen, onToggle, onSelect, onNew, onDelete, onRename }: Props) {
   const [hov, setHov] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editingId) inputRef.current?.focus(); }, [editingId]);
+
+  const startEdit = (conv: Conversation) => { setEditingId(conv.id); setEditValue(conv.title); };
+  const commitEdit = (id: string) => { if (editValue.trim()) onRename(id, editValue.trim()); setEditingId(null); };
+
   if (!isOpen) return null;
 
   return (
@@ -49,13 +59,26 @@ export default function Sidebar({ conversations, activeId, isOpen, onToggle, onS
         ) : conversations.map(conv => (
           <div key={conv.id} onMouseEnter={() => setHov(conv.id)} onMouseLeave={() => setHov(null)}
             style={{ position: "relative", borderRadius: 8, marginBottom: 2, background: activeId === conv.id ? "var(--bg-tertiary)" : hov === conv.id ? "rgba(255,255,255,0.03)" : "transparent", border: activeId === conv.id ? "1px solid var(--border-light)" : "1px solid transparent" }}>
-            <button onClick={() => onSelect(conv.id)} style={{ width: "100%", padding: "9px 32px 9px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left", display: "block" }}>
-              <div style={{ fontSize: 13, color: activeId === conv.id ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: activeId === conv.id ? 500 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
-                {conv.title || "New conversation"}
+            {editingId === conv.id ? (
+              <div style={{ padding: "6px 12px" }}>
+                <input
+                  ref={inputRef}
+                  value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                  onBlur={() => commitEdit(conv.id)}
+                  onKeyDown={e => { if (e.key === "Enter") commitEdit(conv.id); if (e.key === "Escape") setEditingId(null); }}
+                  style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 4, padding: "3px 6px", color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                />
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{timeAgo(conv.updatedAt)}</div>
-            </button>
-            {(hov === conv.id || activeId === conv.id) && (
+            ) : (
+              <button onClick={() => onSelect(conv.id)} onDoubleClick={() => startEdit(conv)} style={{ width: "100%", padding: "9px 32px 9px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left", display: "block" }}>
+                <div style={{ fontSize: 13, color: activeId === conv.id ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: activeId === conv.id ? 500 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
+                  {conv.title || "New conversation"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{timeAgo(conv.updatedAt)}</div>
+              </button>
+            )}
+            {editingId !== conv.id && (hov === conv.id || activeId === conv.id) && (
               <button onClick={e => { e.stopPropagation(); if (confirmDel === conv.id) { onDelete(conv.id); setConfirmDel(null); } else { setConfirmDel(conv.id); setTimeout(() => setConfirmDel(null), 3000); } }}
                 style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: confirmDel === conv.id ? "var(--red)" : "var(--text-muted)", padding: 4, borderRadius: 4, display: "flex", alignItems: "center" }}>
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3h9M5 3V2h3v1M4 3v7h5V3H4z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
