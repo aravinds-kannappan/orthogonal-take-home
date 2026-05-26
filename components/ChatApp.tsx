@@ -29,19 +29,56 @@ export interface Conversation {
   updatedAt: string;
 }
 
+function extractContactsFromResult(result: unknown): Record<string, string>[] {
+  if (!result || typeof result !== "object") return [];
+  const r = result as Record<string, unknown>;
+  const data = (r.data as Record<string, unknown>) || r;
+  const out: Record<string, string>[] = [];
+
+  const toPerson = (p: Record<string, unknown>) => ({
+    name: String(p.name || p.fullName || `${p.first_name || ""} ${p.last_name || ""}`.trim() || ""),
+    title: String(p.title || p.headline || ""),
+    company: String((p.organization as Record<string, unknown>)?.name || (p.company as Record<string, unknown>)?.name || p.companyName || p.company_domain || ""),
+    email: String(Array.isArray(p.emails) ? p.emails[0] : (p.email || "")),
+    linkedin: String(p.linkedin_url || p.linkedInUrl || ""),
+    phone: String(p.phone_number || p.phone || ""),
+  });
+
+  if (Array.isArray(data?.people)) (data.people as Record<string, unknown>[]).forEach(p => out.push(toPerson(p)));
+  if (data?.person && typeof data.person === "object") out.push(toPerson(data.person as Record<string, unknown>));
+  if (Array.isArray(data?.profiles)) (data.profiles as Record<string, unknown>[]).forEach(p => out.push(toPerson(p)));
+  if (data?.lead && typeof data.lead === "object") out.push(toPerson(data.lead as Record<string, unknown>));
+  if (Array.isArray(data?.emails)) {
+    (data.emails as Record<string, unknown>[]).forEach(e => out.push({
+      name: `${e.first_name || ""} ${e.last_name || ""}`.trim(),
+      title: String(e.position || e.title || ""),
+      company: "",
+      email: String(e.value || e.email || ""),
+      linkedin: String(e.linkedin || ""),
+      phone: "",
+    }));
+  }
+  return out.filter(c => c.name || c.email);
+}
+
 export default function ChatApp() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [memoryCount, setMemoryCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
   const refreshConvList = useCallback(() => {
     fetch("/api/conversations").then(r => r.json()).then(d => { if (Array.isArray(d)) setConversations(d); }).catch(() => {});
   }, []);
 
-  useEffect(() => { refreshConvList(); }, [refreshConvList]);
+  const refreshMemoryCount = useCallback(() => {
+    fetch("/api/memory").then(r => r.json()).then(d => { if (typeof d.count === "number") setMemoryCount(d.count); }).catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshConvList(); refreshMemoryCount(); }, [refreshConvList, refreshMemoryCount]);
 
   const loadConversation = useCallback(async (id: string) => {
     setActiveConvId(id);
@@ -64,6 +101,41 @@ export default function ChatApp() {
     setConversations(p => p.filter(c => c.id !== id));
     if (activeConvId === id) { setActiveConvId(null); setMessages([]); }
   }, [activeConvId]);
+
+  const renameConversation = useCallback(async (id: string, title: string) => {
+    await fetch(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    setConversations(p => p.map(c => c.id === id ? { ...c, title } : c));
+  }, []);
+
+  const exportContacts = useCallback(() => {
+    const all: Record<string, string>[] = [];
+    for (const msg of messages) {
+      for (const ev of msg.toolEvents || []) {
+        if (ev.type === "tool_result" && ev.result) all.push(...extractContactsFromResult(ev.result));
+      }
+    }
+    const seen = new Set<string>();
+    const unique = all.filter(c => {
+      const key = c.name || c.email;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!unique.length) { alert("No contacts found in this conversation to export."); return; }
+    const headers = ["Name", "Title", "Company", "Email", "LinkedIn", "Phone"];
+    const csv = [
+      headers.join(","),
+      ...unique.map(c => [c.name, c.title, c.company, c.email, c.linkedin, c.phone].map(v => `"${(v || "").replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "contacts.csv";
+    a.click();
+  }, [messages]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return;
@@ -105,11 +177,12 @@ export default function ChatApp() {
             if (ev.type === "text") {
               setMessages(p => p.map(m => m.id === asstId ? { ...m, content: m.content + ev.text } : m));
             } else if (ev.type === "tool_start") {
-              setMessages(p => p.map(m => m.id === asstId ? { ...m, toolEvents: [...(m.toolEvents||[]), { id: uuidv4(), type: "tool_start", toolName: ev.toolName, toolInput: ev.toolInput }] } : m));
+              setMessages(p => p.map(m => m.id === asstId ? { ...m, toolEvents: [...(m.toolEvents || []), { id: uuidv4(), type: "tool_start", toolName: ev.toolName, toolInput: ev.toolInput }] } : m));
             } else if (ev.type === "tool_result") {
-              setMessages(p => p.map(m => m.id === asstId ? { ...m, toolEvents: [...(m.toolEvents||[]), { id: uuidv4(), type: "tool_result", toolName: ev.toolName, result: ev.result, price: ev.price }] } : m));
+              setMessages(p => p.map(m => m.id === asstId ? { ...m, toolEvents: [...(m.toolEvents || []), { id: uuidv4(), type: "tool_result", toolName: ev.toolName, result: ev.result, price: ev.price }] } : m));
             } else if (ev.type === "done") {
               refreshConvList();
+              refreshMemoryCount();
             }
           } catch { /* skip */ }
         }
@@ -122,12 +195,13 @@ export default function ChatApp() {
       setIsLoading(false);
       setMessages(p => p.map(m => m.id === asstId ? { ...m, isStreaming: false } : m));
     }
-  }, [activeConvId, isLoading, refreshConvList]);
+  }, [activeConvId, isLoading, refreshConvList, refreshMemoryCount]);
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "var(--bg)", overflow: "hidden" }}>
       <Sidebar conversations={conversations} activeId={activeConvId} isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(v => !v)} onSelect={loadConversation} onNew={newConversation} onDelete={deleteConversation} />
+        onToggle={() => setSidebarOpen(v => !v)} onSelect={loadConversation} onNew={newConversation}
+        onDelete={deleteConversation} onRename={renameConversation} />
       <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         <header style={{ padding: "16px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, background: "var(--bg-secondary)", flexShrink: 0 }}>
           {!sidebarOpen && (
@@ -141,9 +215,25 @@ export default function ChatApp() {
             </div>
             <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>Orthogonal Chat</span>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} />
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Connected</span>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            {memoryCount > 0 && (
+              <div title={`${memoryCount} facts remembered from previous conversations`}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 8px", background: "var(--accent-dim)", border: "1px solid var(--accent)", borderRadius: 12, fontSize: 11, color: "var(--accent-light)", cursor: "default" }}>
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1C3 1 1 3 1 5.5S3 10 5.5 10 10 8 10 5.5 8 1 5.5 1z" stroke="currentColor" strokeWidth="1.2"/><path d="M3.5 5c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><circle cx="5.5" cy="5" r=".6" fill="currentColor"/></svg>
+                {memoryCount} {memoryCount === 1 ? "memory" : "memories"}
+              </div>
+            )}
+            {messages.length > 0 && (
+              <button onClick={exportContacts}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3.5 5.5L6 8l2.5-2.5M2 10h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Export CSV
+              </button>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)" }} />
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Connected</span>
+            </div>
           </div>
         </header>
         <MessageList messages={messages} isLoading={isLoading} onSend={sendMessage} />
