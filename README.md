@@ -207,22 +207,52 @@ The agentic loop (Claude calling multiple tools in sequence) is the most expensi
 
 **Known limitations** — C-suite executives at major companies (Stripe, OpenAI, Google) intentionally keep their contact info off these databases. The APIs work best for mid-level managers, sales/marketing roles, and smaller companies. This is a data availability issue, not an app issue — the fallback chain still fires and Claude explains what it found.
 
-**What I'd add with more time:**
-- **Circuit breaker** — after N consecutive failures to a specific sub-API, stop routing to it temporarily
-- **Retry with exponential backoff** — for transient 5xx errors, retry up to 3 times before giving up
-- **User-facing status** — show which specific API is slow/failing in the UI
+---
+
+## Security & Observability
+
+### Security
+
+**What's in place:**
+
+- API keys stored as environment variables, never hardcoded or committed to the repo
+- All Orthogonal and Anthropic calls happen server-side — keys are never exposed to the browser
+- Input passed directly to Claude's system prompt is controlled — user messages are passed as conversation turns, not injected into the system prompt
+
+### Observability
+
+**What's in place:**
+
+- Every tool call returns a structured result with success/failure status and error messages, giving baseline visibility into API health
 
 ---
 
 ## What I'd Do With More Time
 
-1. **Auth** — NextAuth.js with Google OAuth for per-user private conversations
-2. **Token-precise context management** — use tiktoken for exact sliding window instead of message count
-3. **Redis enrichment cache** — cache company/person results to cut Orthogonal costs on repeated queries
-4. **Circuit breaker pattern** — automatic fallback when a sub-API is consistently failing
-5. **Retry with exponential backoff** — for transient Orthogonal API failures
-6. **Conversation search** — full-text search across message history
-7. **Per-user rate limiting** — Upstash Redis sliding window to prevent credit exhaustion
-8. **Additional APIs** — Would significantly improve enrichment quality and broad-search friendly
-9. **Export** — download conversation as markdown or CSV
-10. **Streaming tool results** — show partial API data as it arrives rather than waiting for full response
+**Context & Performance**
+- **Token-precise context management** — use tiktoken for exact sliding window instead of message count
+- **Redis enrichment cache** — cache company/person results to cut Orthogonal costs on repeated queries
+- **Streaming tool results** — show partial API data as it arrives rather than waiting for full response
+
+**Reliability**
+- **Circuit breaker pattern** — after N consecutive failures to a specific sub-API, stop routing to it temporarily
+- **Retry with exponential backoff** — for transient Orthogonal API failures
+- **User-facing API status** — show which specific API is slow or failing in the UI
+
+**Security**
+- **Auth** — NextAuth.js with Google OAuth so conversations are private per user. Without auth, anyone with the URL can use the app and exhaust API credits
+- **API key rotation** — rotate keys on a schedule via a secrets manager (AWS Secrets Manager or Vercel's environment variable API)
+- **Input sanitization** — strip or escape HTML/script content from user messages before storing in Redis, to prevent stored XSS
+- **CORS** — restrict API routes to only accept requests from the app's own domain
+
+**Observability**
+- **Structured logging** — log every tool call with API name, endpoint, latency, success/failure, and cost
+- **Tracing** — use OpenTelemetry to trace a full request from user message → Claude → tool calls → response
+- **Alerting** — error rate spikes, p95 latency exceeding 10s, or Orthogonal credit balance dropping below a threshold
+- **Cost monitoring** — track Orthogonal spend per user and per API using the `price` field already returned in every response
+- **Uptime monitoring** — health check endpoint that pings each Orthogonal sub-API and reports status
+
+**Features**
+- **Conversation search** — full-text search across message history
+- **Export** — download conversation as markdown or CSV
+- **Additional APIs** — would significantly improve enrichment quality and coverage
