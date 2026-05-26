@@ -63,6 +63,14 @@ export async function updateConversationSummary(conversationId: string, summary:
   await redis.set(`conv:${conversationId}`, conv);
 }
 
+export async function updateConversationTitle(id: string, title: string) {
+  const conv = await getConversation(id);
+  if (!conv) return;
+  conv.title = title;
+  conv.updatedAt = new Date().toISOString();
+  await redis.set(`conv:${id}`, conv);
+}
+
 export async function deleteConversation(id: string) {
   await redis.del(`conv:${id}`);
 }
