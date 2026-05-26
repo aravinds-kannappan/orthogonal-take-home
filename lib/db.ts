@@ -20,7 +20,7 @@ export interface Conversation {
   updatedAt: string;
 }
 
-export const MAX_MESSAGES_IN_CONTEXT = 20;
+export const MAX_MESSAGES_IN_CONTEXT = 8;
 
 export async function getAllConversations(): Promise<Conversation[]> {
   try {
