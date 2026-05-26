@@ -74,9 +74,25 @@ export const orthogonalTools = {
     return result;
   },
 
-  // Enrich person — Sixtyfour primary, Apollo people match fallback
+  // Enrich person — Fiber kitchen-sink primary, Apollo fallback, Sixtyfour last resort
   enrichPerson: async (p: { firstName: string; lastName: string; domain?: string; linkedinUrl?: string }) => {
-    const result = await runOrthogonal("sixtyfour", "/enrich-lead", {
+    const fiber = await runOrthogonal("fiber", "/v1/kitchen-sink/person", {
+      personName: { fullName: `${p.firstName} ${p.lastName}` },
+      companyDomain: p.domain ? { domain: p.domain } : undefined,
+      profileIdentifier: p.linkedinUrl || undefined,
+    });
+    if (fiber.success) return fiber;
+
+    const apollo = await runOrthogonal("apollo", "/api/v1/people/match", {
+      first_name: p.firstName,
+      last_name: p.lastName,
+      organization_domain: p.domain,
+      reveal_personal_emails: true,
+      reveal_phone_number: true,
+    });
+    if (apollo.success) return apollo;
+
+    return runOrthogonal("sixtyfour", "/enrich-lead", {
       lead_info: {
         first_name: p.firstName,
         last_name: p.lastName,
@@ -84,47 +100,40 @@ export const orthogonalTools = {
         linkedin_url: p.linkedinUrl,
       },
     });
-    if (!result.success) {
-      return runOrthogonal("apollo", "/api/v1/people/match", {
-        first_name: p.firstName,
-        last_name: p.lastName,
-        organization_domain: p.domain,
-      });
-    }
-    return result;
   },
 
-  // Find email — Tomba primary, Fiber contact details fallback
+  // Find email — Sixtyfour primary, Tomba fallback
   findEmail: async (p: { firstName: string; lastName: string; domain: string }) => {
-    const result = await runOrthogonal("tomba", "/v1/email-finder", undefined, {
+    const sixtyfour = await runOrthogonal("sixtyfour", "/find-email", {
+      lead_info: {
+        first_name: p.firstName,
+        last_name: p.lastName,
+        company_domain: p.domain,
+      },
+    });
+    if (sixtyfour.success) return sixtyfour;
+
+    return runOrthogonal("tomba", "/v1/email-finder", undefined, {
       domain: p.domain,
       first_name: p.firstName,
       last_name: p.lastName,
     });
-    if (!result.success) {
-      return runOrthogonal("fiber", "/v1/contact-details/turbo/sync", {
-        first_name: p.firstName,
-        last_name: p.lastName,
-        company_website: p.domain,
-      });
-    }
-    return result;
   },
 
-  // Enrich company — Apollo primary, Fiber kitchen sink fallback
+  // Enrich company — Apollo + Fiber in parallel, Sixtyfour fallback
   enrichCompany: async (p: { domain: string }) => {
-    const result = await runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, {
-      domain: p.domain,
+    const [apollo, fiber] = await Promise.all([
+      runOrthogonal("apollo", "/api/v1/organizations/enrich", undefined, { domain: p.domain }),
+      runOrthogonal("fiber", "/v1/kitchen-sink/company", { companyDomain: { domain: p.domain } }),
+    ]);
+    if (apollo.success) return apollo;
+    if (fiber.success) return fiber;
+    return runOrthogonal("sixtyfour", "/enrich-company", {
+      company_info: { domain: p.domain },
     });
-    if (!result.success) {
-      return runOrthogonal("fiber", "/v1/kitchen-sink/company", {
-        company_website: p.domain,
-      });
-    }
-    return result;
   },
 
-  // Find contacts at company — Apollo primary, Tomba domain search fallback
+  // Find contacts at company — Apollo primary, Tomba fallback
   findContactsAtCompany: async (p: { domain: string; title?: string; limit?: number }) => {
     const result = await runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
       q_organization_domains: [p.domain],
@@ -139,7 +148,7 @@ export const orthogonalTools = {
     return result;
   },
 
-  // Natural language people search — Fiber primary, Apollo keyword fallback
+  // Natural language people search — Fiber primary, Apollo fallback
   searchPeopleNL: async (p: { query: string }) => {
     const result = await runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
       query: p.query,
@@ -184,13 +193,13 @@ export const CLAUDE_TOOLS = [
   },
   {
     name: "enrich_person",
-    description: "Get detailed info about a specific person — email, LinkedIn, company, title.",
+    description: "Get detailed info about a specific known person — email, LinkedIn, phone, company, title. Use when you know someone's full name.",
     input_schema: {
       type: "object",
       properties: {
         firstName: { type: "string" },
         lastName: { type: "string" },
-        domain: { type: "string", description: "Company domain e.g. stripe.com" },
+        domain: { type: "string", description: "Company domain e.g. perplexity.ai" },
         linkedinUrl: { type: "string" },
       },
       required: ["firstName", "lastName"],
@@ -198,20 +207,20 @@ export const CLAUDE_TOOLS = [
   },
   {
     name: "find_email",
-    description: "Find the professional email address for a person at a company.",
+    description: "Find the professional email address for a specific known person at a company.",
     input_schema: {
       type: "object",
       properties: {
         firstName: { type: "string" },
         lastName: { type: "string" },
-        domain: { type: "string", description: "Company domain e.g. stripe.com" },
+        domain: { type: "string", description: "Company domain e.g. perplexity.ai" },
       },
       required: ["firstName", "lastName", "domain"],
     },
   },
   {
     name: "enrich_company",
-    description: "Get detailed company info by domain — funding, headcount, industry, description.",
+    description: "Get detailed company info by domain — funding, headcount, industry, description, leadership.",
     input_schema: {
       type: "object",
       properties: {
@@ -235,7 +244,7 @@ export const CLAUDE_TOOLS = [
   },
   {
     name: "search_people_nl",
-    description: "Natural language search for people. Use this for queries like 'VPs of Sales at fintech startups' or 'engineers at Series B AI companies'.",
+    description: "Natural language search for people. Use for queries like 'VPs of Sales at fintech startups' or 'engineers at Series B AI companies'.",
     input_schema: {
       type: "object",
       properties: {
