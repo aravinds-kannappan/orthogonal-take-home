@@ -2,8 +2,8 @@
 import { useEffect, useRef } from "react";
 import type { UIMessage, ToolEvent } from "./ChatApp";
 
-const TOOL_LABELS: Record<string, string> = { search_people: "Searching people", search_companies: "Searching companies", enrich_person: "Enriching profile", find_email: "Finding email", enrich_company: "Enriching company", find_contacts_at_company: "Finding contacts" };
-const TOOL_ICONS: Record<string, string> = { search_people: "👤", search_companies: "🏢", enrich_person: "🔍", find_email: "✉️", enrich_company: "📊", find_contacts_at_company: "👥" };
+const TOOL_LABELS: Record<string, string> = { search_people: "Searching people", search_companies: "Searching companies", enrich_person: "Enriching profile", find_email: "Finding email", enrich_company: "Enriching company", find_contacts_at_company: "Finding contacts", search_people_nl: "Searching people" };
+const TOOL_ICONS: Record<string, string> = { search_people: "👤", search_companies: "🏢", enrich_person: "🔍", find_email: "✉️", enrich_company: "📊", find_contacts_at_company: "👥", search_people_nl: "🔎" };
 
 function ToolEventDisplay({ events }: { events: ToolEvent[] }) {
   const toolNames = [...new Set(events.map(e => e.toolName))];
@@ -99,7 +99,14 @@ function Message({ msg }: { msg: UIMessage }) {
   );
 }
 
-export default function MessageList({ messages, isLoading }: { messages: UIMessage[]; isLoading: boolean }) {
+const EXAMPLE_PROMPTS = [
+  "Find 3 HR recruiters at samsung.com with emails",
+  "Enrich Stripe's company profile",
+  "Find VP of Engineering contacts at Notion",
+  "Search for AI startup founders in Series B",
+];
+
+export default function MessageList({ messages, isLoading, onSend }: { messages: UIMessage[]; isLoading: boolean; onSend?: (msg: string) => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -112,12 +119,19 @@ export default function MessageList({ messages, isLoading }: { messages: UIMessa
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Ask anything about companies & people</div>
           <div style={{ fontSize: 13, maxWidth: 380, lineHeight: 1.6 }}>
-            Try <em style={{ color: "var(--text-secondary)" }}>"Find the CEO of Stripe and their contact info"</em> or <em style={{ color: "var(--text-secondary)" }}>"Search for VP Sales at fintech startups"</em>
+            Try <em style={{ color: "var(--text-secondary)" }}>&quot;Find the CEO of Stripe and their contact info&quot;</em> or <em style={{ color: "var(--text-secondary)" }}>&quot;Search for VP Sales at fintech startups&quot;</em>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-          {["Enrich Stripe's company profile", "Find contacts at OpenAI", "Search for AI startup founders"].map(s => (
-            <div key={s} style={{ padding: "6px 12px", background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 20, fontSize: 12, color: "var(--text-secondary)" }}>{s}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: 480 }}>
+          {EXAMPLE_PROMPTS.map(s => (
+            <button
+              key={s}
+              onClick={() => onSend?.(s)}
+              disabled={isLoading}
+              style={{ padding: "6px 12px", background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 20, fontSize: 12, color: "var(--text-secondary)", cursor: isLoading ? "not-allowed" : "pointer", transition: "border-color 0.15s", fontFamily: "inherit" }}
+              onMouseEnter={e => { if (!isLoading) (e.target as HTMLButtonElement).style.borderColor = "var(--accent)"; }}
+              onMouseLeave={e => { (e.target as HTMLButtonElement).style.borderColor = "var(--border)"; }}
+            >{s}</button>
           ))}
         </div>
       </div>
