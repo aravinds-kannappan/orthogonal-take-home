@@ -19,6 +19,8 @@ RULES:
 - Chain tools when needed: if asked to find contacts AND their emails, call find_contacts_at_company then find_email for each person in the same session
 - If find_email fails, automatically call enrich_person for the same person — it also returns email and LinkedIn URL
 - Only tell the user a lookup failed if ALL available tools for that data have been tried
+- When the user asks for emails, only include contacts in your final response where you successfully retrieved an actual email address — skip anyone where email came back empty or null. Same rule for LinkedIn URLs — only list them if the URL was actually returned.
+- If a contact has has_email: true but no email address was returned, call enrich_person or find_email for that contact before including them. Never list a contact as having an email if you don't have the actual address.
 - End with one short follow-up offer e.g. "Would you like me to enrich any of these contacts?"`;
 
 async function extractAndSaveMemories(responseText: string, convTitle: string) {

@@ -43,13 +43,14 @@ async function runOrthogonal(
 
 export const orthogonalTools = {
   // Search people — Apollo primary, Fiber NL fallback
-  searchPeople: async (p: { name?: string; title?: string; company?: string; keywords?: string; limit?: number }) => {
+  searchPeople: async (p: { name?: string; title?: string; company?: string; keywords?: string; limit?: number; emailRequired?: boolean; linkedinRequired?: boolean }) => {
     const result = await runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
       q_person_name: p.name,
       person_titles: p.title ? [p.title] : undefined,
       q_organization_name: p.company,
       q_keywords: p.keywords,
       per_page: p.limit ?? 10,
+      contact_email_status_cd: p.emailRequired ? ["verified", "likely"] : undefined,
     });
     if (!result.success) {
       return runOrthogonal("fiber", "/v1/natural-language-search/profiles", {
@@ -140,11 +141,12 @@ export const orthogonalTools = {
   },
 
   // Find contacts at company — Apollo primary, Tomba fallback
-  findContactsAtCompany: async (p: { domain: string; title?: string; limit?: number }) => {
+  findContactsAtCompany: async (p: { domain: string; title?: string; limit?: number; emailRequired?: boolean; linkedinRequired?: boolean }) => {
     const result = await runOrthogonal("apollo", "/api/v1/mixed_people/api_search", {
       q_organization_domains: [p.domain],
       person_titles: p.title ? [p.title] : undefined,
       per_page: p.limit ?? 10,
+      contact_email_status_cd: p.emailRequired ? ["verified", "likely"] : undefined,
     });
     if (!result.success) {
       return runOrthogonal("tomba", "/v1/domain-search", undefined, {
@@ -178,6 +180,8 @@ export const CLAUDE_TOOLS = [
         company: { type: "string", description: "Company name" },
         keywords: { type: "string", description: "Additional keywords" },
         limit: { type: "number", description: "Number of results (default 10)" },
+        emailRequired: { type: "boolean", description: "If true, only return contacts that have a verified or likely email address" },
+        linkedinRequired: { type: "boolean", description: "If true, only return contacts that have a LinkedIn URL" },
       },
     },
   },
@@ -241,6 +245,8 @@ export const CLAUDE_TOOLS = [
         domain: { type: "string", description: "Company domain" },
         title: { type: "string", description: "Filter by job title (optional)" },
         limit: { type: "number" },
+        emailRequired: { type: "boolean", description: "If true, only return contacts that have a verified or likely email address" },
+        linkedinRequired: { type: "boolean", description: "If true, only return contacts that have a LinkedIn URL" },
       },
       required: ["domain"],
     },
